@@ -1,0 +1,102 @@
+function net = hyperpar_net(d_train, l_train, d_val, l_val)
+% config network
+global netName full_path do_train multiclass parentFolder
+
+full_path = strcat(parentFolder,netName,'\')
+status = mkdir(full_path);
+
+if status==1
+    disp('New directory created. The training progress of this network will be saved there ..')
+end
+
+if multiclass == 1
+    classes1 = categories(l_train{1});
+    classes2 = categorical(["vibration"]);
+    classes = {classes1{1} ; classes1{2};  classes2}
+else
+    classes = categories(l_train{1})
+end
+
+% training pseudo fine-tuning
+% load 1t_34.mat %--> 1t_weights1 1t_weights2 (weights and bias)
+%                 % 1t_bias1 (weights fixed, bias variable)
+%                 % 1t_weights4 (weights fixed, bias inesistente)
+% % load two_nodes1.mat --> 1t_weights3
+% w1 = net.Layers(2,1).Weights;
+% w2 = net.Layers(5,1).Weights;
+% w3 = net.Layers(8,1).Weights;
+% 
+% b1 = net.Layers(2,1).Bias;
+% b2 = net.Layers(5,1).Bias;
+% b3 = net.Layers(8,1).Bias;
+% clear net
+
+%Characterize the network
+numFeatures = size(d_train{1},1);
+numClasses = numel(classes);
+valData = {d_val, l_val};
+
+%% network_architecture
+
+if do_train ==1
+    c_nohit =0;
+    c_hit =0;
+    input_norm = 'none';
+
+    layers = [...
+        sequenceInputLayer(numFeatures)
+        %         fullyConnectedLayer(6,'Weights',w1,'WeightLearnRateFactor',0,'Bias',b1,'BiasLearnRateFactor',0)
+        fullyConnectedLayer(5)
+        layerNormalizationLayer
+        fullyConnectedLayer(numClasses)
+        softmaxLayer
+        classificationLayer];
+%         classificationLayer("Classes",classes,"ClassWeights",[c_nohit,c_hit])];
+
+    momentum =0.9;
+    lr=0.01;
+    gt=1;
+    l2reg=0.0001;
+    mbs=64;
+    epochs =100;
+    valpat= Inf;
+
+    options = trainingOptions('sgdm', ...
+        'Momentum',momentum,...
+        'InitialLearnRate',lr,...
+        'GradientThreshold',gt, ...
+        'L2Regularization',l2reg,...
+        'MiniBatchSize', mbs,...
+        'MaxEpochs',epochs, ...
+        'ValidationData',valData, ...
+        'ValidationFrequency', 50, ...
+        'ValidationPatience',valpat,...
+        'Shuffle','every-epoch',...
+        'Verbose',0, ...
+        'OutputNetwork', 'best-validation-loss', ...
+        'Plots','training-progress',...
+        'ExecutionEnvironment', 'cpu');
+    
+    % print sul file di testo salvato nella cartella della rete
+    cd (full_path)
+    fileID = fopen( 'options.txt','w');
+    fprintf(fileID, '\n Training options\n\n');
+    fprintf(fileID,'Normalization %s \n', input_norm);
+    fprintf(fileID,'Momentum %f \n',momentum);
+    fprintf(fileID,'InitialLearnRate %d \n', lr);
+    fprintf(fileID,'GradientThreshold %f \n',gt);
+    fprintf(fileID,'L2Regularization %f \n',l2reg);
+    fprintf(fileID,'MiniBatchSize %d \n',mbs);
+    fprintf(fileID,'ValidationPatience %d \n',valpat);
+    fprintf(fileID,'MaxEpochs %d \n',epochs);
+    fprintf(fileID,'Cost [%d,%d] \n', c_nohit,c_hit);
+
+    % Train the network
+    net = trainNetwork(d_train ,l_train ,layers,options);
+    disp('Saving the trained network ...')
+    save(netName,'net');
+else
+    cd (full_path)
+    disp('Loading the trained network ...')
+    load (netName,'net')
+end
